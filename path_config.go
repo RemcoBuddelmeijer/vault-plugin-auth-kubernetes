@@ -8,7 +8,6 @@ import (
 	"encoding/pem"
 	"errors"
 
-	"github.com/briankassouf/jose/jws"
 	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/logical"
 )
@@ -34,15 +33,6 @@ func pathConfig(b *kubeAuthBackend) *framework.Path {
 				Description: "PEM encoded CA cert for use by the TLS client used to talk with the API.",
 				DisplayAttrs: &framework.DisplayAttributes{
 					Name: "Kubernetes CA Certificate",
-				},
-			},
-			"token_reviewer_jwt": {
-				Type: framework.TypeString,
-				Description: `A service account JWT used to access the
-TokenReview API to validate other JWTs during login. If not set
-the JWT used for login will be used to access the API.`,
-				DisplayAttrs: &framework.DisplayAttributes{
-					Name: "Token Reviewer JWT",
 				},
 			},
 			"pem_keys": {
@@ -72,10 +62,10 @@ extracted. Not every installation of Kubernetes exposes these keys.`,
 			},
 			"disable_local_ca_jwt": {
 				Type:        framework.TypeBool,
-				Description: "Disable defaulting to the local CA cert and service account JWT when running in a Kubernetes pod",
+				Description: "Disable defaulting to the local CA cert when running in a Kubernetes pod. Soon to be deprecated and supersued by disable_local_ca",
 				Default:     false,
 				DisplayAttrs: &framework.DisplayAttributes{
-					Name: "Disable use of local CA and service account JWT",
+					Name: "Disable use of local CA",
 				},
 			},
 		},
@@ -105,7 +95,7 @@ func (b *kubeAuthBackend) pathConfigRead(ctx context.Context, req *logical.Reque
 				"pem_keys":               config.PEMKeys,
 				"issuer":                 config.Issuer,
 				"disable_iss_validation": config.DisableISSValidation,
-				"disable_local_ca_jwt":   config.DisableLocalCAJwt,
+				"disable_local_ca_jwt":   config.DisableLocalCa,
 			},
 		}
 
@@ -120,30 +110,22 @@ func (b *kubeAuthBackend) pathConfigWrite(ctx context.Context, req *logical.Requ
 		return logical.ErrorResponse("no host provided"), nil
 	}
 
-	disableLocalJWT := data.Get("disable_local_ca_jwt").(bool)
+	DisableLocalCa := data.Get("disable_local_ca_jwt").(bool)
 	pemList := data.Get("pem_keys").([]string)
 	caCert := data.Get("kubernetes_ca_cert").(string)
 	issuer := data.Get("issuer").(string)
 	disableIssValidation := data.Get("disable_iss_validation").(bool)
-	tokenReviewer := data.Get("token_reviewer_jwt").(string)
 
-	if disableLocalJWT {
-		if len(tokenReviewer) > 0 {
-			// Validate it's a JWT
-			_, err := jws.ParseJWT([]byte(tokenReviewer))
-			if err != nil {
-				return nil, err
-			}
-		}
+	if DisableLocalCa {
 		if len(caCert) == 0 {
 			return logical.ErrorResponse("kubernetes_ca_cert must be given when disable_local_ca_jwt is true"), nil
 		}
-	} else if len(tokenReviewer) == 0 || len(caCert) == 0 {
+	} else if len(caCert) == 0 {
 		// User did not provide token or CA certificate:
 		// load local token and/or CA cert into memory but do not store them persistently.
 		b.l.Lock()
 		defer b.l.Unlock()
-		err := b.loadLocalFiles(len(tokenReviewer) == 0, len(caCert) == 0)
+		err := b.loadLocalFiles(false, len(caCert) == 0)
 		if err != nil {
 			return logical.ErrorResponse(err.Error()), nil
 		}
@@ -154,10 +136,9 @@ func (b *kubeAuthBackend) pathConfigWrite(ctx context.Context, req *logical.Requ
 		PEMKeys:              pemList,
 		Host:                 host,
 		CACert:               caCert,
-		TokenReviewerJWT:     tokenReviewer,
 		Issuer:               issuer,
 		DisableISSValidation: disableIssValidation,
-		DisableLocalCAJwt:    disableLocalJWT,
+		DisableLocalCa:       DisableLocalCa,
 	}
 
 	var err error
@@ -192,15 +173,15 @@ type kubeConfig struct {
 	// CACert is the CA Cert to use to call into the kubernetes API
 	CACert string `json:"ca_cert"`
 	// TokenReviewJWT is the bearer to use during the TokenReview API call
-	TokenReviewerJWT string `json:"token_reviewer_jwt"`
+	// This JWT token is only kept in memory after being fetched from file
+	TokenReviewerJWT string
 	// Issuer is the claim that specifies who issued the token
 	Issuer string `json:"issuer"`
 	// DisableISSValidation is optional parameter to allow to skip ISS validation
 	DisableISSValidation bool `json:"disable_iss_validation"`
-	// DisableLocalJWT is an optional parameter to disable defaulting to using
-	// the local CA cert and service account jwt when running in a Kubernetes
-	// pod
-	DisableLocalCAJwt bool `json:"disable_local_ca_jwt"`
+	// DisableLocalCA is an optional parameter to disable defaulting to using
+	// the local CA cert when running in a Kubernetes pod
+	DisableLocalCa bool `json:"disable_local_ca_jwt"`
 }
 
 // PasrsePublicKeyPEM is used to parse RSA and ECDSA public keys from PEMs

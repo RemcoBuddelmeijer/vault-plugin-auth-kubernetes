@@ -176,6 +176,7 @@ func TestConfig(t *testing.T) {
 		PEMKeys:              []string{},
 		Host:                 "host",
 		CACert:               testCACert,
+		TokenReviewerJWT:     "",
 		DisableISSValidation: false,
 	}
 
@@ -217,9 +218,9 @@ func TestConfig(t *testing.T) {
 		PEMKeys:              []string{},
 		Host:                 "host",
 		CACert:               testCACert,
-		TokenReviewerJWT:     jwtData,
+		TokenReviewerJWT:     "",
 		DisableISSValidation: false,
-		DisableLocalCAJwt:    false,
+		DisableLocalCa:       false,
 	}
 
 	conf, err = b.(*kubeAuthBackend).config(context.Background(), storage)
@@ -260,8 +261,9 @@ func TestConfig(t *testing.T) {
 		PEMKeys:              []string{testRSACert},
 		Host:                 "host",
 		CACert:               testCACert,
+		TokenReviewerJWT:     "",
 		DisableISSValidation: false,
-		DisableLocalCAJwt:    false,
+		DisableLocalCa:       false,
 	}
 
 	conf, err = b.(*kubeAuthBackend).config(context.Background(), storage)
@@ -307,8 +309,9 @@ func TestConfig(t *testing.T) {
 		PEMKeys:              []string{testRSACert, testECCert},
 		Host:                 "host",
 		CACert:               testCACert,
+		TokenReviewerJWT:     "",
 		DisableISSValidation: false,
-		DisableLocalCAJwt:    false,
+		DisableLocalCa:       false,
 	}
 
 	conf, err = b.(*kubeAuthBackend).config(context.Background(), storage)
@@ -349,8 +352,9 @@ func TestConfig(t *testing.T) {
 		PEMKeys:              []string{},
 		Host:                 "host",
 		CACert:               testCACert,
+		TokenReviewerJWT:     "",
 		DisableISSValidation: true,
-		DisableLocalCAJwt:    false,
+		DisableLocalCa:       false,
 	}
 
 	conf, err = b.(*kubeAuthBackend).config(context.Background(), storage)
@@ -373,7 +377,7 @@ func TestConfig_LocalCaJWT(t *testing.T) {
 		config   map[string]interface{}
 		expected *kubeConfig
 	}{
-		"no CA or JWT, default to local": {
+		"no CA": {
 			config: map[string]interface{}{
 				"kubernetes_host": "host",
 			},
@@ -384,10 +388,10 @@ func TestConfig_LocalCaJWT(t *testing.T) {
 				CACert:               testLocalCACert,
 				TokenReviewerJWT:     testLocalJWT,
 				DisableISSValidation: false,
-				DisableLocalCAJwt:    false,
+				DisableLocalCa:       false,
 			},
 		},
-		"CA set, default to local JWT": {
+		"CA set": {
 			config: map[string]interface{}{
 				"kubernetes_host":    "host",
 				"kubernetes_ca_cert": testCACert,
@@ -399,10 +403,10 @@ func TestConfig_LocalCaJWT(t *testing.T) {
 				CACert:               testCACert,
 				TokenReviewerJWT:     testLocalJWT,
 				DisableISSValidation: false,
-				DisableLocalCAJwt:    false,
+				DisableLocalCa:       false,
 			},
 		},
-		"JWT set, default to local CA": {
+		"JWT set to random value, ignore": {
 			config: map[string]interface{}{
 				"kubernetes_host":    "host",
 				"token_reviewer_jwt": jwtData,
@@ -412,9 +416,9 @@ func TestConfig_LocalCaJWT(t *testing.T) {
 				PEMKeys:              []string{},
 				Host:                 "host",
 				CACert:               testLocalCACert,
-				TokenReviewerJWT:     jwtData,
+				TokenReviewerJWT:     testLocalJWT,
 				DisableISSValidation: false,
-				DisableLocalCAJwt:    false,
+				DisableLocalCa:       false,
 			},
 		},
 		"CA and disable local default": {
@@ -428,9 +432,9 @@ func TestConfig_LocalCaJWT(t *testing.T) {
 				PEMKeys:              []string{},
 				Host:                 "host",
 				CACert:               testCACert,
-				TokenReviewerJWT:     "",
+				TokenReviewerJWT:     testLocalJWT,
 				DisableISSValidation: false,
-				DisableLocalCAJwt:    true,
+				DisableLocalCa:       true,
 			},
 		},
 	}

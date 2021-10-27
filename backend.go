@@ -53,9 +53,6 @@ type kubeAuthBackend struct {
 
 	// localSATokenReader caches the service account token in memory.
 	// It periodically reloads the token to support token rotation/renewal.
-	// Local token is used when running in a pod with following configuration
-	// - token_reviewer_jwt is not set
-	// - disable_local_ca_jwt is true
 	localSATokenReader *cachingFileReader
 
 	// localCACert contains the local CA certificate. Local CA certificate is
@@ -146,17 +143,15 @@ func (b *kubeAuthBackend) loadConfig(ctx context.Context, s logical.Storage) (*k
 		return nil, errors.New("could not load backend configuration")
 	}
 
-	// Add the local files if required.
-	if !config.DisableLocalCAJwt {
-		if len(config.TokenReviewerJWT) == 0 {
-			config.TokenReviewerJWT, err = b.localSATokenReader.ReadFile()
-			if err != nil {
-				return nil, err
-			}
-		}
-		if len(config.CACert) == 0 {
-			config.CACert = b.localCACert
-		}
+	// Read service account token from cache or local file
+	config.TokenReviewerJWT, err = b.localSATokenReader.ReadFile()
+	if err != nil {
+		return nil, err
+	}
+
+	// Read CA from local file if required.
+	if !config.DisableLocalCa && len(config.CACert) == 0 {
+		config.CACert = b.localCACert
 	}
 
 	return config, nil
@@ -200,13 +195,13 @@ func (b *kubeAuthBackend) role(ctx context.Context, s logical.Storage, name stri
 	return role, nil
 }
 
-// initialize will initialize the global data.
+// initialize will initialize the global data for the backend instance.
 func (b *kubeAuthBackend) initialize(ctx context.Context, req *logical.InitializationRequest) error {
 	// Check if configuration exists and load local token and CA cert files
 	// if they are used.
 	config, _ := b.config(ctx, req.Storage)
-	if config != nil && !config.DisableLocalCAJwt {
-		err := b.loadLocalFiles(len(config.TokenReviewerJWT) == 0, len(config.CACert) == 0)
+	if config != nil {
+		err := b.loadLocalFiles(true, !config.DisableLocalCa && len(config.CACert) == 0)
 		if err != nil {
 			return err
 		}
@@ -219,8 +214,12 @@ func (b *kubeAuthBackend) initialize(ctx context.Context, req *logical.Initializ
 // The function should be called only in context where write lock to backend is
 // held or it is otherwise guaranteed that we can update backend object.
 func (b *kubeAuthBackend) loadLocalFiles(loadJWT, loadCACert bool) error {
-	if loadJWT {
+	// Always initialize the local JWT reader, as we may need this in the future: even if we won't load in the JWT now.
+	if b.localSATokenReader == nil {
 		b.localSATokenReader = newCachingFileReader(localJWTPath, jwtReloadPeriod)
+	}
+
+	if loadJWT {
 		_, err := b.localSATokenReader.ReadFile()
 		if err != nil {
 			return err

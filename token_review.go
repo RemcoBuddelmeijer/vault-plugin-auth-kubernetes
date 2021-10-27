@@ -84,6 +84,7 @@ func (t *tokenReviewAPI) Review(ctx context.Context, jwt string, aud []string) (
 	// If we have a configured TokenReviewer JWT use it as the bearer, otherwise
 	// try to use the passed in JWT.
 	bearer := fmt.Sprintf("Bearer %s", jwt)
+	// Note: this always evaluates to true
 	if len(t.config.TokenReviewerJWT) > 0 {
 		bearer = fmt.Sprintf("Bearer %s", t.config.TokenReviewerJWT)
 	}
